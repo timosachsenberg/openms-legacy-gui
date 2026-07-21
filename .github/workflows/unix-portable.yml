@@ -169,6 +169,13 @@ jobs:
           git clone --depth 1 --branch "$OPENMS_CONTRIB_TAG" \
             https://github.com/OpenMS/contrib.git "$OPENMS_CONTRIB_SOURCE"
 
+      # Must run before OpenMS is configured so the build records resolvable
+      # contrib paths instead of the archive's original build directory.
+      - name: Repoint macOS contrib install names
+        if: runner.os == 'macOS'
+        shell: bash
+        run: ci/portable/normalize-contrib-macos.sh
+
       - name: Configure OpenMS core and TOPP
         shell: bash
         run: ci/portable/configure-openms-unix.sh

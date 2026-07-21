@@ -59,6 +59,14 @@ if(OPENMS_LEGACY_GUI_BUILD_INTERACTIVE_TESTS)
     target_include_directories(${_gui_test} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/GUI)
     # link against openms_gui and qt
     target_link_libraries(${_gui_test} PRIVATE OpenMSLegacyGUI Qt6::Test)
+    # File::getOpenMSDataPath() resolves to the OpenMS *install* tree, which is
+    # built without examples/ for the portable package. Let the caller point the
+    # tests at a share/OpenMS that has the full data set; without it the tests
+    # fall back to the regular runtime resolution.
+    if(OPENMS_LEGACY_GUI_TEST_DATA_DIR)
+      target_compile_definitions(${_gui_test} PRIVATE
+        OPENMS_LEGACY_GUI_TEST_DATA_DIR="${OPENMS_LEGACY_GUI_TEST_DATA_DIR}")
+    endif()
     # add the test
     add_test(NAME ${_gui_test} COMMAND ${_gui_test})
   endforeach(_gui_test)
