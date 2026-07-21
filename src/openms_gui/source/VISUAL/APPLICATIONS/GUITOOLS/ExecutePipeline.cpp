@@ -7,6 +7,7 @@
 // --------------------------------------------------------------------------
 
 #include <OpenMS/config.h>
+#include <OpenMS/CONCEPT/Exception.h>
 #include <OpenMS/APPLICATIONS/TOPPBase.h>
 #include <OpenMS/VISUAL/TOPPASScene.h>
 #include <OpenMS/SYSTEM/File.h>
@@ -179,9 +180,30 @@ protected:
 
 int main(int argc, const char ** argv)
 {
-  QApplicationTOPP::configurePortableEnvironment();
-  TOPPExecutePipeline tool;
-  return tool.main(argc, argv);
+  if (const std::string error = QApplicationTOPP::configurePortableEnvironment(); !error.empty())
+  {
+    std::cerr << "ExecutePipeline cannot start: " << error << std::endl;
+    return 1;
+  }
+  // TOPPBase's constructor runs outside tool.main()'s own exception handling. An
+  // OpenMS exception escaping here would abort the process with no diagnostic,
+  // because GlobalExceptionHandler suppresses the terminate message.
+  try
+  {
+    TOPPExecutePipeline tool;
+    return tool.main(argc, argv);
+  }
+  catch (const Exception::BaseException& e)
+  {
+    std::cerr << "ExecutePipeline failed to start: " << e.getName() << ": " << e.what()
+              << " (" << e.getFile() << ":" << e.getLine() << ")" << std::endl;
+    return 1;
+  }
+  catch (const std::exception& e)
+  {
+    std::cerr << "ExecutePipeline failed to start: " << e.what() << std::endl;
+    return 1;
+  }
 }
 
 /// @endcond

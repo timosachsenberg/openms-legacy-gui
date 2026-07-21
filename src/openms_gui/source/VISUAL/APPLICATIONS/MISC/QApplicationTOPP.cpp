@@ -37,7 +37,7 @@
 namespace OpenMS
 {
 
-  void QApplicationTOPP::configurePortableEnvironment()
+  std::string QApplicationTOPP::configurePortableEnvironment()
   {
 #ifdef OPENMS_LEGACY_GUI_PORTABLE
     const QDir executable_dir(toQString(File::getExecutablePath()));
@@ -60,10 +60,26 @@ namespace OpenMS
 
     if (!QFileInfo(QDir(data_path).filePath("CHEMISTRY/unimod.xml")).isFile())
     {
-      throw Exception::FileNotFound(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
-                                    data_path.toStdString());
+      return "This portable package is incomplete: its bundled OpenMS data directory "
+             "was not found at '" + QDir::toNativeSeparators(data_path).toStdString()
+             + "' (resolved from the executable at '"
+             + File::getExecutablePath() + "').";
     }
     qputenv("OPENMS_DATA_PATH", QFileInfo(data_path).absoluteFilePath().toUtf8());
+
+    // OpenMS caches the resolved data directory in a function-local static, so a
+    // component that resolved it earlier would pin the wrong tree. Confirm the
+    // bundle actually won rather than trusting the qputenv above.
+    const QString expected = QFileInfo(data_path).canonicalFilePath();
+    const QString resolved =
+      QFileInfo(QString::fromStdString(File::getOpenMSDataPath())).canonicalFilePath();
+    if (resolved != expected)
+    {
+      return "OpenMS resolved its shared-data directory to '"
+             + QDir::toNativeSeparators(resolved).toStdString()
+             + "' but this portable build requires its bundled data at '"
+             + QDir::toNativeSeparators(expected).toStdString() + "'.";
+    }
 
     const QString dotnet_root = package_root.filePath("dotnet");
     if (QFileInfo(dotnet_root).isDir())
@@ -71,6 +87,7 @@ namespace OpenMS
       qputenv("DOTNET_ROOT", QFileInfo(dotnet_root).absoluteFilePath().toUtf8());
     }
 #endif
+    return {};
   }
 
   QApplicationTOPP::QApplicationTOPP(int& argc, char** argv) :
