@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deploy five native app bundles plus the shared TOPP command-line directory.
 # Required: GITHUB_WORKSPACE GUI_STAGE GUI_BUILD QT_ROOT_DIR QT_PLUGIN_DIR
-#           OPENMS_INSTALL OPENMS_CONTRIB HOMEBREW_PREFIX
+#           OPENMS_BUILD OPENMS_INSTALL OPENMS_CONTRIB HOMEBREW_PREFIX
 set -eo pipefail
 
 bin="$GUI_STAGE/bin"
@@ -12,6 +12,33 @@ smoke=$(find "$GUI_BUILD" -type f -name openms-legacy-gui-thermo-smoke \
   -perm -u+x -print -quit)
 test -n "$smoke"
 cp "$smoke" "$bin/openms-legacy-gui-thermo-smoke"
+
+# The smoke probe is copied straight out of the build tree, so it still carries
+# LC_RPATH entries pointing into the OpenMS/GUI build directories. libOpenMS.dylib
+# exists there *and* in the install tree, which makes @rpath/libOpenMS.dylib
+# ambiguous: file(GET_RUNTIME_DEPENDENCIES) then aborts with "Multiple conflicting
+# paths found". Drop build-tree rpaths so the install tree is the only resolution.
+strip_build_rpaths() {
+  local macho=$1
+  file "$macho" | grep -q 'Mach-O' || return 0
+  local changed=0 rpath
+  while IFS= read -r rpath; do
+    case "$rpath" in
+      "$OPENMS_BUILD"/*|"$OPENMS_BUILD"|"$GUI_BUILD"/*|"$GUI_BUILD")
+        install_name_tool -delete_rpath "$rpath" "$macho"
+        changed=1
+        ;;
+    esac
+  done < <(otool -l "$macho" | awk '$1 == "path" { print $2 }')
+  # install_name_tool invalidates the signature; arm64 will not load unsigned images.
+  if (( changed )); then
+    codesign --force --sign - "$macho" 2>/dev/null || true
+  fi
+}
+
+for executable in "$bin"/*; do
+  [[ -f "$executable" ]] && strip_build_rpaths "$executable"
+done
 
 executables=()
 for executable in "$bin"/*; do
