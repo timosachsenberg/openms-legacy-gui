@@ -24,6 +24,13 @@ The scripts are split into deliberately small phases:
 
 The workflow definitions in `.github/workflows/` pin OpenMS, contrib, Qt, and
 .NET versions. Update those pins together and let all three platform jobs pass
-before publishing a package. The applications intentionally receive an invalid
-`OPENMS_DATA_PATH` during verification; their portable bootstrap must discover
-the adjacent `share/OpenMS` directory without help from the runner.
+before publishing a package.
+
+The applications intentionally receive an invalid `OPENMS_DATA_PATH` during
+verification, and the `verify-*` scripts additionally move both compiled-in
+OpenMS data trees (the install prefix and the OpenMS source share tree) aside for
+the duration of those checks. Both still exist on a build runner and are probed
+*before* anything executable-relative, so without hiding them a package that
+cannot find its own data would still pass here and only break once unpacked
+elsewhere. The scripts restore the trees afterwards and refuse to start if a
+`*.hidden-for-verify` backup is left over from an interrupted run.
