@@ -23,7 +23,11 @@ permissions:
 
 concurrency:
   group: legacy-gui-windows-${{ github.ref }}
-  cancel-in-progress: false
+  # Supersede superseded PR runs: these jobs take 1-2 hours, so without this a
+  # series of pushes queues up and every result arrives against a stale commit.
+  # Release and workflow_call runs still run to completion -- there github.event_name
+  # is the caller's event, so this evaluates false and nothing is cancelled.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   QT_VERSION: 6.8.3
