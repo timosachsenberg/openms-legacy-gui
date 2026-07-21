@@ -1,0 +1,238 @@
+name: Linux and macOS portable packages
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/unix-portable.yml
+      - CMakeLists.txt
+      - cmake/**
+      - ci/portable/**
+      - share/**
+      - src/**
+      - tools/**
+      - LICENSE
+      - README.md
+      - UPSTREAM_OPENMS_REVISION
+
+permissions:
+  contents: read
+
+concurrency:
+  group: legacy-gui-unix-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  QT_VERSION: 6.8.3
+  DOTNET_SDK_VERSION: 8.0.x
+  OPENMS_REF: 7ee0cccf29d69a75503cae542ea397b4dec5c88e
+  OPENMS_CONTRIB_TAG: 2026-03-25-183345
+  OPENMS_SOURCE: ${{ github.workspace }}/_deps/OpenMS
+  OPENMS_CONTRIB: ${{ github.workspace }}/_deps/contrib
+  OPENMS_CONTRIB_SOURCE: ${{ github.workspace }}/_deps/contrib-source
+  OPENMS_BUILD: ${{ github.workspace }}/_build/OpenMS
+  OPENMS_INSTALL: ${{ github.workspace }}/_install/OpenMS
+  GUI_BUILD: ${{ github.workspace }}/_build/legacy-gui
+  GUI_STAGE: ${{ github.workspace }}/_stage/OpenMSLegacyGUI
+  THERMO_TEST_DATA: ${{ github.workspace }}/_deps/OpenMS/src/tests/topp/THIRDPARTY/ginkgotoxin-ms-switching.raw
+  CMAKE_BUILD_PARALLEL_LEVEL: 2
+
+jobs:
+  package-unix:
+    name: ${{ matrix.platform }} ${{ matrix.arch }} portable ZIP
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Linux
+            runner: ubuntu-24.04
+            arch: x64
+            qt_arch: linux_gcc_64
+            contrib_asset: contrib_build-Linux.tar.gz
+            deployment_target: ''
+          - platform: macOS
+            runner: macos-15
+            arch: arm64
+            qt_arch: homebrew-arm64
+            contrib_asset: contrib_build-macOS.tar.gz
+            deployment_target: '14.0'
+    env:
+      PACKAGE_PLATFORM: ${{ matrix.platform }}
+      ARCH: ${{ matrix.arch }}
+      QT_ARCH: ${{ matrix.qt_arch }}
+      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deployment_target }}
+
+    steps:
+      - name: Check out OpenMS Legacy GUI
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Check out pinned OpenMS
+        uses: actions/checkout@v6
+        with:
+          repository: OpenMS/OpenMS
+          ref: ${{ env.OPENMS_REF }}
+          path: _deps/OpenMS
+          persist-credentials: false
+
+      - name: Record source revisions
+        shell: bash
+        run: |
+          gui_sha=$(git rev-parse HEAD)
+          openms_sha=$(git -C "$OPENMS_SOURCE" rev-parse HEAD)
+          {
+            echo "GUI_SHA=$gui_sha"
+            echo "OPENMS_SHA=$openms_sha"
+            echo "OPENMS_SHORT_SHA=${openms_sha:0:12}"
+          } >> "$GITHUB_ENV"
+
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            libgl1-mesa-dev libxcb-cursor0 libxcb-xinerama0 \
+            libxkbcommon-x11-0 ninja-build patchelf zip
+
+      - name: Install macOS packaging tools
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+        run: |
+          brew install curl libomp ninja qtbase qtsvg qtimageformats
+          {
+            echo "HOMEBREW_PREFIX=$(brew --prefix)"
+            echo "QT_ROOT_DIR=$(brew --prefix qtbase)"
+            echo "QT_EXTRA_PREFIXES=$(brew --prefix qtsvg);$(brew --prefix qtimageformats)"
+          } >> "$GITHUB_ENV"
+
+      - name: Install Linux Qt
+        if: runner.os == 'Linux'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: linux
+          target: desktop
+          arch: ${{ matrix.qt_arch }}
+          archives: qtbase qtsvg qtimageformats
+          cache: true
+
+      - name: Provide ICU 73 for Linux Qt host tools
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          icu_tgz="$RUNNER_TEMP/icu4c-73_2-Ubuntu22.04-x64.tgz"
+          icu_sha256=ce669c2a36d735dfc36375e8536e030b0b79c5f0bc67025a6413fc1404b07e8b
+          curl -fsSL -o "$icu_tgz" \
+            https://github.com/unicode-org/icu/releases/download/release-73-2/icu4c-73_2-Ubuntu22.04-x64.tgz
+          echo "$icu_sha256  $icu_tgz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/icu"
+          tar -xzf "$icu_tgz" -C "$RUNNER_TEMP/icu"
+          sudo find "$RUNNER_TEMP/icu" -name 'libicu*.so.73*' -exec cp -a {} /usr/local/lib/ \;
+          sudo ldconfig
+
+      - name: Record Qt installation
+        shell: bash
+        run: |
+          qtpaths="$QT_ROOT_DIR/bin/qtpaths6"
+          if [[ ! -x "$qtpaths" ]]; then qtpaths="$QT_ROOT_DIR/bin/qtpaths"; fi
+          test -x "$qtpaths"
+          echo "DEPLOYED_QT_VERSION=$($qtpaths --query QT_VERSION)" >> "$GITHUB_ENV"
+          echo "QT_PLUGIN_DIR=$($qtpaths --query QT_INSTALL_PLUGINS)" >> "$GITHUB_ENV"
+
+      - name: Install .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
+
+      - name: Download OpenMS contrib dependencies
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONTRIB_ASSET: ${{ matrix.contrib_asset }}
+        run: |
+          echo "CONTRIB_TAG=$OPENMS_CONTRIB_TAG" >> "$GITHUB_ENV"
+          mkdir -p "$OPENMS_CONTRIB"
+          gh release download "$OPENMS_CONTRIB_TAG" \
+            --repo OpenMS/contrib --pattern "$CONTRIB_ASSET" --dir "$OPENMS_CONTRIB"
+          tar xzf "$OPENMS_CONTRIB/$CONTRIB_ASSET" -C "$OPENMS_CONTRIB"
+          rm "$OPENMS_CONTRIB/$CONTRIB_ASSET"
+          git clone --depth 1 --branch "$OPENMS_CONTRIB_TAG" \
+            https://github.com/OpenMS/contrib.git "$OPENMS_CONTRIB_SOURCE"
+
+      - name: Configure OpenMS core and TOPP
+        shell: bash
+        run: ci/portable/configure-openms-unix.sh
+
+      - name: Build and install OpenMS core and TOPP
+        shell: bash
+        run: ci/portable/build-openms-unix.sh
+
+      - name: Build and run GUI class tests
+        if: runner.os == 'Linux'
+        shell: bash
+        run: ci/portable/test-gui-unix.sh
+
+      - name: Build and install migrated GUI
+        shell: bash
+        run: ci/portable/build-gui-unix.sh
+
+      - name: Bundle .NET 8 runtime
+        shell: bash
+        run: ci/portable/bundle-dotnet-unix.sh
+
+      - name: Stage data, TOPP tools, licenses, and provenance
+        shell: bash
+        run: ci/portable/stage-data-unix.sh
+
+      - name: Deploy Linux runtime dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: ci/portable/deploy-linux.sh
+
+      - name: Deploy macOS application bundles
+        if: runner.os == 'macOS'
+        shell: bash
+        run: ci/portable/deploy-macos.sh
+
+      - name: Verify Linux portable folder
+        if: runner.os == 'Linux'
+        shell: bash
+        run: ci/portable/verify-linux.sh
+
+      - name: Verify macOS portable folder
+        if: runner.os == 'macOS'
+        shell: bash
+        run: ci/portable/verify-macos.sh
+
+      - name: Audit Linux dependency closure
+        if: runner.os == 'Linux'
+        shell: bash
+        run: ci/portable/audit-linux.sh
+
+      - name: Audit macOS dependency closure
+        if: runner.os == 'macOS'
+        shell: bash
+        run: ci/portable/audit-macos.sh
+
+      - name: Create ZIP and checksum
+        id: package
+        shell: bash
+        run: ci/portable/archive-unix.sh
+
+      - name: Upload portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.artifact_name }}
+          path: |
+            artifacts/*.zip
+            artifacts/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

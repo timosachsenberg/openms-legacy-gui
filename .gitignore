@@ -1,0 +1,6 @@
+/build*/
+/artifacts/
+/.cache/
+*.user
+*.swp
+.DS_Store

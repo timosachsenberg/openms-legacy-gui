@@ -1,0 +1,19 @@
+# Match the upstream OpenMS policy: text is always checked out with Unix line
+# endings, including on Windows/WSL and with core.autocrlf enabled globally.
+* text=auto eol=lf
+
+# Preserve binary application assets and example database indices verbatim.
+*.bmp binary
+*.icns binary
+*.ico binary
+*.jpg binary
+*.png binary
+*.mzML binary
+*.mzXML binary
+*.raw binary
+*.psd binary
+*.phr binary
+*.pin binary
+*.pog binary
+*.psi binary
+*.psq binary

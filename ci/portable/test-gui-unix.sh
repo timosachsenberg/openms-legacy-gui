@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Build and run the standalone migrated GUI class tests (Linux only).
+# Required: GITHUB_WORKSPACE GUI_BUILD OPENMS_INSTALL OPENMS_CONTRIB QT_ROOT_DIR
+set -eo pipefail
+
+cmake -S "$GITHUB_WORKSPACE" -B "$GUI_BUILD" -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR/lib/cmake;$QT_ROOT_DIR;$OPENMS_CONTRIB;$OPENMS_INSTALL" \
+  -DOPENMS_CONTRIB_LIBS="$OPENMS_CONTRIB" \
+  -DOpenMS_DIR="$OPENMS_INSTALL/lib/cmake/OpenMS" \
+  -DOPENMS_LEGACY_GUI_WITH_WEBENGINE=OFF \
+  -DOPENMS_LEGACY_GUI_BUILD_TESTS=ON \
+  -DOPENMS_LEGACY_GUI_BUILD_INTERACTIVE_TESTS=OFF \
+  -DOPENMS_LEGACY_GUI_INSTALL_EXAMPLES=OFF
+cmake --build "$GUI_BUILD" --target VISUAL_TEST
+ctest --test-dir "$GUI_BUILD" --output-on-failure

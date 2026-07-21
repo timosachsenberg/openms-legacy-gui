@@ -1,0 +1,168 @@
+name: Windows portable package
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/windows-portable.yml
+      - CMakeLists.txt
+      - cmake/**
+      - ci/portable/**
+      - share/**
+      - src/**
+      - tools/**
+      - LICENSE
+      - README.md
+      - UPSTREAM_OPENMS_REVISION
+
+permissions:
+  contents: read
+
+concurrency:
+  group: legacy-gui-windows-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  QT_VERSION: 6.8.3
+  DOTNET_SDK_VERSION: 8.0.x
+  CURL_VERSION: 8.12.1
+  OPENMS_REF: 7ee0cccf29d69a75503cae542ea397b4dec5c88e
+  OPENMS_CONTRIB_TAG: 2026-03-25-183345
+  OPENMS_SOURCE: ${{ github.workspace }}/_deps/OpenMS
+  OPENMS_CONTRIB: ${{ github.workspace }}/_deps/contrib
+  OPENMS_CONTRIB_SOURCE: ${{ github.workspace }}/_deps/contrib-source
+  OPENMS_BUILD: ${{ github.workspace }}/_build/OpenMS
+  OPENMS_INSTALL: ${{ github.workspace }}/_install/OpenMS
+  GUI_BUILD: ${{ github.workspace }}/_build/legacy-gui
+  GUI_STAGE: ${{ github.workspace }}/_stage/OpenMSLegacyGUI
+  THERMO_TEST_DATA: ${{ github.workspace }}/_deps/OpenMS/src/tests/topp/THIRDPARTY/ginkgotoxin-ms-switching.raw
+  CMAKE_BUILD_PARALLEL_LEVEL: 2
+  CXXFLAGS: -D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR
+
+jobs:
+  package-windows-x64:
+    name: Windows x64 portable ZIP
+    runs-on: windows-latest
+    timeout-minutes: 240
+
+    steps:
+      - name: Check out OpenMS Legacy GUI
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Check out pinned OpenMS
+        uses: actions/checkout@v6
+        with:
+          repository: OpenMS/OpenMS
+          ref: ${{ env.OPENMS_REF }}
+          path: _deps/OpenMS
+          persist-credentials: false
+
+      - name: Record source revisions
+        shell: pwsh
+        run: |
+          $guiSha = (git rev-parse HEAD).Trim()
+          $openmsSha = (git -C "$env:OPENMS_SOURCE" rev-parse HEAD).Trim()
+          "GUI_SHA=$guiSha" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "OPENMS_SHA=$openmsSha" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "OPENMS_SHORT_SHA=$($openmsSha.Substring(0, 12))" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          archives: qtbase qtsvg qtimageformats
+          cache: true
+
+      - name: Install .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
+
+      - name: Set up Visual Studio shell
+        uses: egor-tensin/vs-shell@v2
+        with:
+          arch: x64
+
+      - name: Download OpenMS contrib dependencies
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "CONTRIB_TAG=$OPENMS_CONTRIB_TAG" >> "$GITHUB_ENV"
+          mkdir -p "$OPENMS_CONTRIB"
+          cd "$OPENMS_CONTRIB"
+          gh release download "$OPENMS_CONTRIB_TAG" \
+            --repo OpenMS/contrib --pattern contrib_build-Windows.tar.gz
+          7z x -so contrib_build-Windows.tar.gz | 7z x -si -ttar
+          rm contrib_build-Windows.tar.gz
+          git clone --depth 1 --branch "$OPENMS_CONTRIB_TAG" \
+            https://github.com/OpenMS/contrib.git "$OPENMS_CONTRIB_SOURCE"
+
+      - name: Build libcurl with Schannel
+        shell: bash
+        run: |
+          cd "$GITHUB_WORKSPACE/_deps"
+          curl --fail --location --retry 3 \
+            --output "curl-$CURL_VERSION.tar.gz" \
+            "https://curl.se/download/curl-$CURL_VERSION.tar.gz"
+          tar xzf "curl-$CURL_VERSION.tar.gz"
+          cmake -S "curl-$CURL_VERSION" -B curl-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$OPENMS_CONTRIB" \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCURL_USE_SCHANNEL=ON \
+            -DBUILD_CURL_EXE=OFF \
+            -DBUILD_TESTING=OFF \
+            -DCURL_DISABLE_LDAP=ON \
+            -DCURL_USE_LIBPSL=OFF
+          cmake --build curl-build
+          cmake --install curl-build
+
+      - name: Configure OpenMS core and TOPP
+        shell: bash
+        run: ci/portable/configure-openms-windows.sh
+
+      - name: Build and install OpenMS core and TOPP
+        shell: bash
+        run: ci/portable/build-openms-windows.sh
+
+      - name: Build and install migrated GUI
+        shell: bash
+        run: ci/portable/build-gui-windows.sh
+
+      - name: Bundle .NET 8 runtime
+        shell: pwsh
+        run: ci/portable/bundle-dotnet-windows.ps1
+
+      - name: Stage data, TOPP tools, licenses, and provenance
+        shell: pwsh
+        run: ci/portable/stage-data-windows.ps1
+
+      - name: Deploy runtime dependencies
+        shell: pwsh
+        run: ci/portable/deploy-windows.ps1
+
+      - name: Verify portable folder
+        shell: pwsh
+        run: ci/portable/verify-windows.ps1
+
+      - name: Create ZIP and checksum
+        id: package
+        shell: pwsh
+        run: ci/portable/archive-windows.ps1
+
+      - name: Upload portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.artifact_name }}
+          path: |
+            artifacts/*.zip
+            artifacts/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
