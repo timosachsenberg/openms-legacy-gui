@@ -47,6 +47,11 @@ try {
   foreach ($tree in @((Join-Path $env:OPENMS_INSTALL "share/OpenMS"),
                       (Join-Path $env:OPENMS_SOURCE "share/OpenMS"))) {
     if (Test-Path $tree) {
+      # A leftover backup from a killed run would turn the move into a *nested*
+      # move, and the restore would then produce share/OpenMS/OpenMS.
+      if (Test-Path "$tree.hidden-for-verify") {
+        throw "Stale backup from an interrupted run: $tree.hidden-for-verify"
+      }
       Move-Item -LiteralPath $tree -Destination "$tree.hidden-for-verify" -Force
       $hiddenDataTrees += $tree
     }

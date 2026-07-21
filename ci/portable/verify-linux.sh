@@ -56,6 +56,12 @@ trap restore_data_trees EXIT
 
 for tree in "$OPENMS_INSTALL/share/OpenMS" "$OPENMS_SOURCE/share/OpenMS"; do
   if [[ -d "$tree" ]]; then
+    # A leftover backup from a killed run would turn the mv into a *nested* move
+    # ("<backup>/OpenMS"), and the restore would then produce share/OpenMS/OpenMS.
+    if [[ -e "$tree.hidden-for-verify" ]]; then
+      echo "Stale backup from an interrupted run: $tree.hidden-for-verify" >&2
+      exit 1
+    fi
     mv "$tree" "$tree.hidden-for-verify"
     hidden_data_trees+=("$tree")
   fi
