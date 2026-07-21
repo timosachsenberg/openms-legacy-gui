@@ -36,7 +36,13 @@ macho_dependencies() {
     | sed -E 's/^[[:space:]]+//; s/[[:space:]]+\(compatibility version .*\)$//'
 }
 
-mapfile -t candidates < <(find "$lib" -type f \( -name '*.dylib' -o -name '*.so' \) -print)
+# Collected up front because the list is walked twice (rewrite, then validate).
+# Built with a read loop rather than mapfile: macOS ships bash 3.2, where mapfile
+# does not exist. Keep every macOS-executed script bash 3.2 compatible.
+candidates=()
+while IFS= read -r -d '' macho; do
+  candidates+=("$macho")
+done < <(find "$lib" -type f \( -name '*.dylib' -o -name '*.so' \) -print0)
 
 rewritten=0
 for macho in "${candidates[@]}"; do

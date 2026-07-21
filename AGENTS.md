@@ -93,8 +93,23 @@ Three recurring hazards, all handled in `ci/portable/`:
 
 ## Shell conventions in `ci/portable/`
 
-Scripts are `set -eo pipefail` and fail closed. Two traps that have already
-caused silent breakage here:
+Scripts are `set -eo pipefail` and fail closed.
+
+**Anything that runs on macOS must be bash 3.2 compatible.** macOS still ships
+bash 3.2 as `/bin/bash`, so `mapfile`/`readarray`, associative arrays
+(`declare -A`), and `${var^^}`/`${var,,}` are unavailable — using one fails with
+`command not found` and exit 127. Build arrays with a read loop instead:
+
+```sh
+items=()
+while IFS= read -r -d '' item; do items+=("$item"); done < <(find ... -print0)
+```
+
+Linux-only scripts (`deploy-linux.sh`, `audit-linux.sh`, ...) run on Ubuntu with
+bash 5 and may use the newer builtins; the `*-unix.sh` and `*-macos.sh` ones may
+not.
+
+Three further traps that have already caused silent breakage here:
 
 - `some_tool ... | while read ...` hides a failure of `some_tool`: the loop still
   sees an empty stream and succeeds. Capture the output first.
