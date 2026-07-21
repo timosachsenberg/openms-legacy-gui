@@ -27,7 +27,34 @@ $savedPath = $env:PATH
 $savedDotnetRoot = $env:DOTNET_ROOT
 $savedOpenmsDataPath = $env:OPENMS_DATA_PATH
 $savedParserMode = $env:QT_COMMAND_LINE_PARSER_NO_GUI_MESSAGE_BOXES
+
+# OpenMS probes compiled-in data directories before anything executable-relative.
+# On Windows the compiled-in *install* path is skipped, but the compiled-in build
+# path ($OPENMS_SOURCE/share/OpenMS) still exists on this runner and would win over
+# the packaged tree -- masking a package that cannot find its own data, and
+# tripping the bundled-tree check in configurePortableEnvironment(). Hide both so
+# the executables have nothing to fall back on but the archive itself.
+$hiddenDataTrees = @()
+function Restore-DataTrees {
+  foreach ($tree in $script:hiddenDataTrees) {
+    $hidden = "$tree.hidden-for-verify"
+    if (Test-Path $hidden) { Move-Item -LiteralPath $hidden -Destination $tree -Force }
+  }
+  $script:hiddenDataTrees = @()
+}
+
 try {
+  foreach ($tree in @((Join-Path $env:OPENMS_INSTALL "share/OpenMS"),
+                      (Join-Path $env:OPENMS_SOURCE "share/OpenMS"))) {
+    if (Test-Path $tree) {
+      Move-Item -LiteralPath $tree -Destination "$tree.hidden-for-verify" -Force
+      $hiddenDataTrees += $tree
+    }
+  }
+  if ($hiddenDataTrees.Count -ne 2) {
+    throw "Expected to hide 2 compiled-in OpenMS data trees, hid $($hiddenDataTrees.Count)."
+  }
+
   $env:PATH = "$bin;$env:SystemRoot/System32;$env:SystemRoot"
   $env:DOTNET_ROOT = Join-Path $env:GUI_STAGE "dotnet"
   $env:OPENMS_DATA_PATH = Join-Path $env:RUNNER_TEMP "nonexistent-openms-data"
@@ -43,6 +70,8 @@ try {
       throw "$app portable smoke test exited with $($process.ExitCode)."
     }
   }
+
+  Restore-DataTrees
 
   # FileInfo comes from the headless OpenMS build and does not contain the GUI
   # package bootstrap, so verify it against the explicit staged data path.
@@ -70,6 +99,7 @@ try {
   Remove-Item $smokeExecutable -Force
 }
 finally {
+  Restore-DataTrees
   $env:PATH = $savedPath
   $env:DOTNET_ROOT = $savedDotnetRoot
   $env:OPENMS_DATA_PATH = $savedOpenmsDataPath
