@@ -10,15 +10,17 @@ The scripts are split into deliberately small phases:
 
 1. `configure-openms-*` and `build-openms-*` build the pinned OpenMS core and
    TOPP tools with `WITH_GUI=OFF`.
-2. `build-gui-*` builds and installs this standalone GUI against that core.
-3. `stage-data-*` and `bundle-dotnet-*` add runtime data and the pinned .NET
+2. `test-gui-unix.sh` builds the GUI tests in a dedicated tree and runs both
+   headless class tests and Xvfb-backed interactive tests on Linux.
+3. `build-gui-*` builds and installs this standalone GUI against that core.
+4. `stage-data-*` and `bundle-dotnet-*` add runtime data and the pinned .NET
    runtime.
-4. `deploy-*` gathers native dependencies and Qt platform plugins, then fixes
+5. `deploy-*` gathers native dependencies and Qt platform plugins, then fixes
    runtime search paths or macOS bundles.
-5. `verify-*` starts every application in a sanitized environment and exercises
+6. `verify-*` starts every application in a sanitized environment and exercises
    the packaged Thermo RAW bridge.
-6. `audit-*` rejects dependencies that still resolve from build-runner paths.
-7. `archive-*` creates a ZIP and SHA-256 sidecar.
+7. `audit-*` rejects dependencies that still resolve from build-runner paths.
+8. `archive-*` creates a ZIP and SHA-256 sidecar.
 
 The workflow definitions in `.github/workflows/` pin OpenMS, contrib, Qt, and
 .NET versions. Update those pins together and let all three platform jobs pass

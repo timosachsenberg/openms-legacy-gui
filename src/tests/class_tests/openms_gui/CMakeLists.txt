@@ -52,14 +52,15 @@ if(OPENMS_LEGACY_GUI_BUILD_INTERACTIVE_TESTS)
   foreach(_gui_test ${GUI_executables_list})
     # add the executable (Note: The header needs to be added as source file, too. Otherwise automoc will not find it.
     add_executable(${_gui_test} source/GUI/${_gui_test}.cpp ${CMAKE_CURRENT_SOURCE_DIR}/include/GUI/${_gui_test}.h)
+    # The dialog UI headers come from OpenMSLegacyGUI's AUTOUIC output, exposed
+    # through its build interface. Do not make the test target regenerate them.
+    set_target_properties(${_gui_test} PROPERTIES AUTOUIC OFF)
     # add headers
     target_include_directories(${_gui_test} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/GUI)
     # link against openms_gui and qt
     target_link_libraries(${_gui_test} PRIVATE OpenMSLegacyGUI Qt6::Test)
     # add the test
     add_test(NAME ${_gui_test} COMMAND ${_gui_test})
-    set_tests_properties(${_gui_test} PROPERTIES
-      ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
   endforeach(_gui_test)
 
   #------------------------------------------------------------------------------

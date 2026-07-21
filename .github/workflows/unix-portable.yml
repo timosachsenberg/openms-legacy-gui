@@ -99,7 +99,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
             libgl1-mesa-dev libxcb-cursor0 libxcb-xinerama0 \
-            libxkbcommon-x11-0 ninja-build patchelf zip
+            libxkbcommon-x11-0 ninja-build patchelf xauth xvfb zip
 
       - name: Install macOS packaging tools
         if: runner.os == 'macOS'
@@ -177,7 +177,7 @@ jobs:
         shell: bash
         run: ci/portable/build-openms-unix.sh
 
-      - name: Build and run GUI class tests
+      - name: Build and run GUI tests
         if: runner.os == 'Linux'
         shell: bash
         run: ci/portable/test-gui-unix.sh
