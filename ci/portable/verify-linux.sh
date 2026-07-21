@@ -37,17 +37,46 @@ while IFS= read -r binary; do
 done < <(find "$bin" "$lib" -type f -print)
 
 mkdir -p "$RUNNER_TEMP/openms-legacy-gui-home"
+
+# OpenMS resolves its share directory by probing, in order: the compiled-in
+# install path (CMAKE_INSTALL_PREFIX/share/OpenMS), the compiled-in build path
+# (the OpenMS source share tree), then paths relative to the executable, and
+# only last OPENMS_DATA_PATH. Both compiled-in paths still exist on this runner,
+# so leaving them in place lets a package that cannot find its own data still
+# pass here and then break on a user machine. Hide them so the executables have
+# nothing to fall back on but the archive itself.
+hidden_data_trees=()
+restore_data_trees() {
+  local tree
+  for tree in "${hidden_data_trees[@]}"; do
+    [[ -d "$tree.hidden-for-verify" ]] && mv "$tree.hidden-for-verify" "$tree"
+  done
+}
+trap restore_data_trees EXIT
+
+for tree in "$OPENMS_INSTALL/share/OpenMS" "$OPENMS_SOURCE/share/OpenMS"; do
+  if [[ -d "$tree" ]]; then
+    mv "$tree" "$tree.hidden-for-verify"
+    hidden_data_trees+=("$tree")
+  fi
+done
+test "${#hidden_data_trees[@]}" -eq 2
+
 for app in TOPPView TOPPAS INIFileEditor ExecutePipeline ImageCreator FileInfo; do
-  data_path="$RUNNER_TEMP/nonexistent-openms-data"
-  [[ "$app" == FileInfo ]] && data_path="$GUI_STAGE/share/OpenMS"
+  # A stale OPENMS_DATA_PATH must not be needed *or* consulted: resolution has to
+  # come from bin/../share/OpenMS inside the archive.
   env -i \
     HOME="$RUNNER_TEMP/openms-legacy-gui-home" \
     PATH="$bin:/usr/bin:/bin" \
-    OPENMS_DATA_PATH="$data_path" \
+    OPENMS_DATA_PATH="$RUNNER_TEMP/nonexistent-openms-data" \
     QT_QPA_PLATFORM=offscreen \
     OMP_NUM_THREADS=2 \
     timeout 60 "$bin/$app" --help >/dev/null
 done
+
+restore_data_trees
+hidden_data_trees=()
+trap - EXIT
 
 env -i \
   HOME="$RUNNER_TEMP/openms-legacy-gui-home" \
