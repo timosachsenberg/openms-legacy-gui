@@ -2,6 +2,9 @@ name: Windows portable package
 
 on:
   workflow_dispatch:
+  # Reusable so release.yml publishes artifacts from this exact pipeline
+  # instead of maintaining a separate release-only build path.
+  workflow_call:
   pull_request:
     paths:
       - .github/workflows/windows-portable.yml
@@ -20,13 +23,17 @@ permissions:
 
 concurrency:
   group: legacy-gui-windows-${{ github.ref }}
-  cancel-in-progress: false
+  # Supersede superseded PR runs: these jobs take 1-2 hours, so without this a
+  # series of pushes queues up and every result arrives against a stale commit.
+  # Release and workflow_call runs still run to completion -- there github.event_name
+  # is the caller's event, so this evaluates false and nothing is cancelled.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   QT_VERSION: 6.8.3
   DOTNET_SDK_VERSION: 8.0.x
   CURL_VERSION: 8.12.1
-  OPENMS_REF: 7ee0cccf29d69a75503cae542ea397b4dec5c88e
+  OPENMS_REF: c7d7e2e63b255f4b59892943967da365aa514060
   OPENMS_CONTRIB_TAG: 2026-03-25-183345
   OPENMS_SOURCE: ${{ github.workspace }}/_deps/OpenMS
   OPENMS_CONTRIB: ${{ github.workspace }}/_deps/contrib

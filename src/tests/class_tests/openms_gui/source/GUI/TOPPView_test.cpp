@@ -104,8 +104,26 @@ void TestTOPPView::testGui()
   QTest::qWait(1000);
 
 #if 1 //def __APPLE__ // MAC OS does not support entering a filename via keyboard in the file-open menu
-    tv.addDataFile(File::getOpenMSDataPath() + "/examples/peakpicker_tutorial_1.mzML", false, false);
-    QCOMPARE(tv.tab_bar_.tabText(tv.tab_bar_.currentIndex()), QString("peakpicker_tutorial_1 (1D)"));
+    // Prefer an explicitly configured data directory: File::getOpenMSDataPath()
+    // resolves to the compiled-in install tree, which the portable package builds
+    // without examples/ (see OPENMS_LEGACY_GUI_TEST_DATA_DIR in CMakeLists.txt).
+#ifdef OPENMS_LEGACY_GUI_TEST_DATA_DIR
+    const std::string data_path = OPENMS_LEGACY_GUI_TEST_DATA_DIR;
+#else
+    const std::string data_path = File::getOpenMSDataPath();
+#endif
+    const std::string example = data_path + "/examples/peakpicker_tutorial_1.mzML";
+    // A missing example file otherwise surfaces only as an empty tab bar further
+    // down, which says nothing about where the data was looked for.
+    QVERIFY2(File::exists(example),
+             qPrintable(QString("Test data not found: %1 -- configure "
+                                "OPENMS_LEGACY_GUI_TEST_DATA_DIR to a share/OpenMS that "
+                                "contains examples/")
+                          .arg(QString::fromStdString(example))));
+    const auto load_result = tv.addDataFile(example, false, false);
+    QVERIFY2(load_result == TOPPViewBase::LOAD_RESULT::OK,
+             qPrintable(QString("addDataFile() failed with LOAD_RESULT %1")
+                          .arg(static_cast<int>(load_result))));
 #else
     scheduleModalWidget_("peakpicker_tutorial_1.mzML", "Open file(s)",1000);                 // Open File dialog
     scheduleModalWidget_("", "Open data options for peakpicker_tutorial_1.mzML",1000); // layer data options dialog

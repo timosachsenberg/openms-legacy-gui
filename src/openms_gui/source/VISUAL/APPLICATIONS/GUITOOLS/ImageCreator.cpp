@@ -6,6 +6,8 @@
 // $Authors: Clemens Groepl, Timo Sachsenberg$
 // --------------------------------------------------------------------------
 
+#include <OpenMS/CONCEPT/Exception.h>
+#include <iostream>
 #include <OpenMS/APPLICATIONS/TOPPBase.h>
 #include <OpenMS/VISUAL/MISC/Qt5Port.h>
 
@@ -405,9 +407,30 @@ protected:
 
 int main(int argc, const char** argv)
 {
-  QApplicationTOPP::configurePortableEnvironment();
-  TOPPImageCreator tool;
-  return tool.main(argc, argv);
+  if (const std::string error = QApplicationTOPP::configurePortableEnvironment(); !error.empty())
+  {
+    std::cerr << "ImageCreator cannot start: " << error << std::endl;
+    return 1;
+  }
+  // TOPPBase's constructor runs outside tool.main()'s own exception handling. An
+  // OpenMS exception escaping here would abort the process with no diagnostic,
+  // because GlobalExceptionHandler suppresses the terminate message.
+  try
+  {
+    TOPPImageCreator tool;
+    return tool.main(argc, argv);
+  }
+  catch (const Exception::BaseException& e)
+  {
+    std::cerr << "ImageCreator failed to start: " << e.getName() << ": " << e.what()
+              << " (" << e.getFile() << ":" << e.getLine() << ")" << std::endl;
+    return 1;
+  }
+  catch (const std::exception& e)
+  {
+    std::cerr << "ImageCreator failed to start: " << e.what() << std::endl;
+    return 1;
+  }
 }
 
 /// @endcond

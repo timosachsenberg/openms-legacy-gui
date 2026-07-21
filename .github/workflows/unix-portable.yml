@@ -2,6 +2,9 @@ name: Linux and macOS portable packages
 
 on:
   workflow_dispatch:
+  # Reusable so release.yml publishes artifacts from this exact pipeline
+  # instead of maintaining a separate release-only build path.
+  workflow_call:
   pull_request:
     paths:
       - .github/workflows/unix-portable.yml
@@ -20,12 +23,16 @@ permissions:
 
 concurrency:
   group: legacy-gui-unix-${{ github.ref }}
-  cancel-in-progress: false
+  # Supersede superseded PR runs: these jobs take 45+ minutes, so without this a
+  # series of pushes queues up and every result arrives against a stale commit.
+  # Release and workflow_call runs still run to completion -- there github.event_name
+  # is the caller's event, so this evaluates false and nothing is cancelled.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   QT_VERSION: 6.8.3
   DOTNET_SDK_VERSION: 8.0.x
-  OPENMS_REF: 7ee0cccf29d69a75503cae542ea397b4dec5c88e
+  OPENMS_REF: c7d7e2e63b255f4b59892943967da365aa514060
   OPENMS_CONTRIB_TAG: 2026-03-25-183345
   OPENMS_SOURCE: ${{ github.workspace }}/_deps/OpenMS
   OPENMS_CONTRIB: ${{ github.workspace }}/_deps/contrib
@@ -96,7 +103,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
             libgl1-mesa-dev libxcb-cursor0 libxcb-xinerama0 \
-            libxkbcommon-x11-0 ninja-build patchelf zip
+            libxkbcommon-x11-0 ninja-build patchelf xauth xvfb zip
 
       - name: Install macOS packaging tools
         if: runner.os == 'macOS'
@@ -166,6 +173,13 @@ jobs:
           git clone --depth 1 --branch "$OPENMS_CONTRIB_TAG" \
             https://github.com/OpenMS/contrib.git "$OPENMS_CONTRIB_SOURCE"
 
+      # Must run before OpenMS is configured so the build records resolvable
+      # contrib paths instead of the archive's original build directory.
+      - name: Repoint macOS contrib install names
+        if: runner.os == 'macOS'
+        shell: bash
+        run: ci/portable/normalize-contrib-macos.sh
+
       - name: Configure OpenMS core and TOPP
         shell: bash
         run: ci/portable/configure-openms-unix.sh
@@ -174,7 +188,7 @@ jobs:
         shell: bash
         run: ci/portable/build-openms-unix.sh
 
-      - name: Build and run GUI class tests
+      - name: Build and run GUI tests
         if: runner.os == 'Linux'
         shell: bash
         run: ci/portable/test-gui-unix.sh

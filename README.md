@@ -71,6 +71,15 @@ OpenMSLegacyGUI/
 macOS uses native `.app` bundles at the package root and embeds each bundle's
 runtime dependencies. CI artifacts are ad-hoc signed and are not notarized.
 
+### Releases
+
+The `Release` workflow reuses both portable-package workflows. A manual run
+builds and verifies Linux, macOS, and Windows archives without publishing
+anything. Pushing a `v*` tag runs the same three builds, verifies their SHA-256
+sidecars and bundled Qt runtimes, and creates a draft GitHub Release containing
+the archives and a combined `SHA256SUMS.txt`. Review and publish that draft from
+GitHub after the workflow succeeds.
+
 ## License
 
 The migrated OpenMS sources are BSD-3-Clause licensed; see [`LICENSE`](LICENSE).

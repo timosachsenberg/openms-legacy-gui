@@ -11,6 +11,8 @@
 // OpenMS_GUI config
 #include <OpenMS/VISUAL/OpenMS_GUIConfig.h>
 
+#include <string>
+
 //Qt
 #include <QtWidgets/QApplication>
 
@@ -39,8 +41,13 @@ public:
 
       This is a no-op in normal builds. Portable entry points call it before
       constructing QApplication or accessing OpenMS shared data.
+
+      Returns an empty string on success, or a human-readable description of the
+      problem. It never throws: it runs before main()'s own error handling is in
+      place, where an escaping exception would abort the process with no usable
+      diagnostic (OpenMS' GlobalExceptionHandler suppresses the terminate message).
     */
-    static void configurePortableEnvironment();
+    static std::string configurePortableEnvironment();
 
     /**
       @brief: Catch exceptions in Qt GUI applications, preventing ungraceful exit

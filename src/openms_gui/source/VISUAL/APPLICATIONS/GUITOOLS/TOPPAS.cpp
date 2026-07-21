@@ -91,7 +91,11 @@ void print_usage(Logger::LogStream& stream = getGlobalLogInfo())
 
 int main(int argc, const char** argv)
 {
-  QApplicationTOPP::configurePortableEnvironment();
+  if (const std::string error = QApplicationTOPP::configurePortableEnvironment(); !error.empty())
+  {
+    std::cerr << "TOPPAS cannot start: " << error << std::endl;
+    return 1;
+  }
 #ifdef OPENMS_WINDOWSPLATFORM
   qputenv("QT_QPA_PLATFORM", "windows:darkmode=0"); // disable dark mode on Windows, since our buttons etc are not designed for it
 #endif

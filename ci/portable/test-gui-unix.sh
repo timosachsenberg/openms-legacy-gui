@@ -1,16 +1,30 @@
 #!/usr/bin/env bash
-# Build and run the standalone migrated GUI class tests (Linux only).
-# Required: GITHUB_WORKSPACE GUI_BUILD OPENMS_INSTALL OPENMS_CONTRIB QT_ROOT_DIR
+# Build and run the standalone migrated GUI tests (Linux only). The dedicated
+# build tree keeps test targets and CTest metadata out of the package build.
+# Xvfb supplies a display for the TOPPView and TSGDialog integration tests.
+# Required: GITHUB_WORKSPACE OPENMS_SOURCE OPENMS_INSTALL OPENMS_CONTRIB QT_ROOT_DIR
 set -eo pipefail
 
-cmake -S "$GITHUB_WORKSPACE" -B "$GUI_BUILD" -G Ninja \
+# TOPPView_test opens share/OpenMS/examples/peakpicker_tutorial_1.mzML. The
+# package build sets INSTALL_OPENMS_EXAMPLES=OFF (examples/ is 136 MB of the
+# 195 MB share tree), so the installed data directory that OpenMS resolves at
+# runtime has no examples/. Point the tests at the OpenMS source share tree
+# instead of installing 136 MB into every portable archive.
+test -f "$OPENMS_SOURCE/share/OpenMS/examples/peakpicker_tutorial_1.mzML"
+
+test_build="$GITHUB_WORKSPACE/_build/gui-tests"
+cmake -S "$GITHUB_WORKSPACE" -B "$test_build" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR/lib/cmake;$QT_ROOT_DIR;$OPENMS_CONTRIB;$OPENMS_INSTALL" \
   -DOPENMS_CONTRIB_LIBS="$OPENMS_CONTRIB" \
   -DOpenMS_DIR="$OPENMS_INSTALL/lib/cmake/OpenMS" \
   -DOPENMS_LEGACY_GUI_WITH_WEBENGINE=OFF \
   -DOPENMS_LEGACY_GUI_BUILD_TESTS=ON \
-  -DOPENMS_LEGACY_GUI_BUILD_INTERACTIVE_TESTS=OFF \
-  -DOPENMS_LEGACY_GUI_INSTALL_EXAMPLES=OFF
-cmake --build "$GUI_BUILD" --target VISUAL_TEST
-ctest --test-dir "$GUI_BUILD" --output-on-failure
+  -DOPENMS_LEGACY_GUI_BUILD_INTERACTIVE_TESTS=ON \
+  -DOPENMS_LEGACY_GUI_INSTALL_EXAMPLES=OFF \
+  -DOPENMS_LEGACY_GUI_TEST_DATA_DIR="$OPENMS_SOURCE/share/OpenMS"
+cmake --build "$test_build" --target VISUAL_TEST GUI_TEST
+
+LD_LIBRARY_PATH="$OPENMS_INSTALL/lib:$OPENMS_CONTRIB/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+OPENMS_DATA_PATH="$OPENMS_INSTALL/share/OpenMS" \
+  xvfb-run -a ctest --test-dir "$test_build" --output-on-failure
